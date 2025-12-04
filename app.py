@@ -13,13 +13,12 @@ st.set_page_config(
 # -------------------------------------------------------------------------
 # MODULE IMPORTS
 # -------------------------------------------------------------------------
-# This dictionary will hold your simulations.
-# The try/except blocks ensure the app still runs even if a file is missing.
+# We use underscores because Python cannot import files with hyphens.
 modules = {}
 
 try:
-    from simulations import bacterial_growth
-    modules["Bacterial Growth"] = bacterial_growth
+    from simulations import growth_sim
+    modules["Bacterial Growth"] = growth_sim
 except ImportError:
     pass
 
@@ -30,14 +29,14 @@ except ImportError:
     pass
 
 try:
-    from simulations import megaplate
-    modules["Mega Plate Evolution"] = megaplate
+    from simulations import mega_plate
+    modules["Mega Plate Evolution"] = mega_plate
 except ImportError:
     pass
 
 try:
-    from simulations import rps
-    modules["Rock-Paper-Scissors"] = rps
+    from simulations import rps_sim
+    modules["Rock-Paper-Scissors"] = rps_sim
 except ImportError:
     pass
 
@@ -75,19 +74,19 @@ if page == "Home":
         
         #### The Modules:
         
-        **1. Bacterial Growth (Stochastic)**
+        **1. Bacterial Growth (growth_sim)**
         * *Concept:* Reaction-Diffusion systems with stochastic noise.
         * *Visuals:* Real-time colony morphology and nutrient depletion fields.
         
-        **2. Lotka-Volterra (Predator-Prey)**
+        **2. Lotka-Volterra (lotka_volterra)**
         * *Concept:* Coupled differential equations on a spatial grid.
         * *Visuals:* Phase-space dynamics and oscillating populations.
         
-        **3. The Mega Plate (Evolution)**
+        **3. The Mega Plate (mega_plate)**
         * *Concept:* Spatial evolutionary dynamics.
         * *Visuals:* Adaptation of bacteria to increasing antibiotic gradients (inspired by the Kishony Lab).
         
-        **4. Rock-Paper-Scissors (Game Theory)**
+        **4. Rock-Paper-Scissors (rps_sim)**
         * *Concept:* Non-transitive cyclic dominance in ecosystems.
         * *Visuals:* Biodiversity preservation through spatial spiral waves.
         """)
