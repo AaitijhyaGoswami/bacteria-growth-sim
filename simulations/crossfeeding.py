@@ -26,7 +26,7 @@ def app():
     **The Metabolyte Consumption Cycle:**
     1.  <span style='color:#FF4444'>**Producer (A)**</span>: Grows freely. **Secretes Food (X)**.
     2.  <span style='color:#44FF44'>**Consumer (B)**</span>: Eats Food (X). **Secretes Poison (Y)**.
-    3.  **Dynamics**: B follows A's metabolyte trail, while A avoids B's poison.
+    3.  **Dynamics**: B follows A's metabolyte trail and A avoids B's poison.
     """, unsafe_allow_html=True)
 
     # -----------------------
