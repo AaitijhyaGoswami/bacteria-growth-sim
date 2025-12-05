@@ -112,19 +112,4 @@ if page == "Home":
 else:
     # Run the selected simulation module
     if page in modules:
-        sim = modules[page]
-
-# Case 1: module exposes an app() function
-if hasattr(sim, "app") and callable(sim.app):
-    sim.app()
-
-# Case 2: module is already a callable (some sims define `app = function`)
-elif callable(sim):
-    sim()
-
-# Otherwise: show error instead of crashing
-else:
-    st.error(f"Module '{page}' does not contain a callable app() function.")
-    st.write("Make sure the simulation file defines:")
-    st.code("def app():\n    ...")
-
+       modules[page].app()
