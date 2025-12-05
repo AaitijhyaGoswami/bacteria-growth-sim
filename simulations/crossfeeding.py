@@ -21,9 +21,9 @@ def app():
             4 * field
         )
 
-    st.title("Chemically Mediated Lotka-Volterra")
+    st.title("Chemically Mediated Cross-freeding")
     st.markdown("""
-    **The "Poison-Excreta" Cycle:**
+    **The Metabolyte Consumption Cycle:**
     1.  <span style='color:#FF4444'>**Producer (A)**</span>: Grows freely. **Secretes Food (X)**.
     2.  <span style='color:#44FF44'>**Consumer (B)**</span>: Eats Food (X). **Secretes Poison (Y)**.
     3.  **Dynamics**: B chases A's food trail, while A runs away from B's poison.
