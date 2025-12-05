@@ -5,7 +5,7 @@ import streamlit as st
 # -------------------------------------------------------------------------
 st.set_page_config(
     page_title="Biophysics Suite | DFOC",
-    page_icon-"🧫",
+    page_icon="🧫",
     layout="wide",
     initial_sidebar_state="expanded"
 )
