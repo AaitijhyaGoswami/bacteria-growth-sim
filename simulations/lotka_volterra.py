@@ -1,6 +1,8 @@
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
+import altair as alt
+import time
 
 def app():
     st.title("Spatial Lotka-Volterra (Predator-Prey)")
@@ -30,6 +32,9 @@ def app():
     st.sidebar.subheader("System Settings")
     GRID_SIZE = 200
     STEPS_PER_FRAME = st.sidebar.slider("Simulation Speed", 1, 50, 5)
+    
+    # Optimization to prevent crashing
+    GRAPH_UPDATE_FREQ = 10 
 
     # -----------------------------
     # 2. HELPER FUNCTIONS
@@ -74,6 +79,7 @@ def app():
         st.session_state.lv_nutrient = nutrient
         st.session_state.lv_mask = mask
         st.session_state.lv_time = 0
+        st.session_state.lv_frame_count = 0
         
         # History lists
         st.session_state.lv_hist_time = []
@@ -102,13 +108,14 @@ def app():
     
     with col_graphs:
         st.write("### Real-time Dynamics")
-        # We use a single placeholder for all matplotlib graphs
-        graph_placeholder = st.empty()
+        pop_chart = st.empty()
+        nutr_chart = st.empty()
+        ratio_chart = st.empty()
 
     run_sim = st.toggle("Run Simulation", value=False)
 
     # -----------------------------
-    # 5. SIMULATION LOOP
+    # 5. PHYSICS LOOP
     # -----------------------------
     if run_sim:
         prey = st.session_state.lv_prey
@@ -134,74 +141,97 @@ def app():
             prey = np.clip(prey, 0, 1)
             predator = np.clip(predator, 0, 1)
             nutrient = np.clip(nutrient, 0, 1)
+            
             prey[~mask] = 0
             predator[~mask] = 0
             nutrient[~mask] = 0
             
             st.session_state.lv_time += 1
             
-            # Record History
+            # Record History (Every 5 steps)
             if st.session_state.lv_time % 5 == 0:
-                st.session_state.lv_hist_time.append(st.session_state.lv_time)
-                st.session_state.lv_hist_prey.append(np.sum(prey))
-                st.session_state.lv_hist_pred.append(np.sum(predator))
-                st.session_state.lv_hist_nutr.append(np.sum(nutrient))
-                
-                # Safe ratio
                 s_prey = np.sum(prey)
-                st.session_state.lv_hist_ratio.append(
-                    np.sum(predator) / s_prey if s_prey > 0 else 0
-                )
+                s_pred = np.sum(predator)
+                st.session_state.lv_hist_time.append(st.session_state.lv_time)
+                st.session_state.lv_hist_prey.append(s_prey)
+                st.session_state.lv_hist_pred.append(s_pred)
+                st.session_state.lv_hist_nutr.append(np.sum(nutrient))
+                st.session_state.lv_hist_ratio.append(s_pred / s_prey if s_prey > 0 else 0)
 
-        # Save State
+        st.session_state.lv_frame_count += 1
         st.session_state.lv_prey = prey
         st.session_state.lv_predator = predator
         st.session_state.lv_nutrient = nutrient
-        
-        st.rerun()
 
     # -----------------------------
-    # 6. RENDERING
+    # 6. VISUALIZATION
     # -----------------------------
-    # A. Image Update
+    # A. Image Update (Every Frame)
     prey = st.session_state.lv_prey
     predator = st.session_state.lv_predator
     nutrient = st.session_state.lv_nutrient
     mask = st.session_state.lv_mask
 
     img = np.zeros((GRID_SIZE, GRID_SIZE, 3))
-    img[..., 0] = np.clip(predator * 4, 0, 1) # Red
-    img[..., 1] = np.clip(nutrient * 4, 0, 1) # Green
-    img[..., 2] = np.clip(prey * 4, 0, 1)     # Blue
+    img[..., 0] = np.clip(predator * 4, 0, 1) # Red (Predator)
+    img[..., 1] = np.clip(nutrient * 4, 0, 1) # Green (Nutrient)
+    img[..., 2] = np.clip(prey * 4, 0, 1)     # Blue (Prey)
     img[~mask] = 0
     
     petri_placeholder.image(img, caption=f"Time: {st.session_state.lv_time} mins", use_column_width=True, clamp=True)
 
-    # B. Graph Update (Matplotlib)
-    if len(st.session_state.lv_hist_time) > 0:
-        # Create a Matplotlib Figure
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(6, 8), sharex=True)
+    # B. Graph Update (Throttled & Altair for Labels)
+    if len(st.session_state.lv_hist_time) > 0 and (st.session_state.lv_frame_count % GRAPH_UPDATE_FREQ == 0):
         
-        times = st.session_state.lv_hist_time
+        # Downsample to keep it fast
+        step_size = max(1, len(st.session_state.lv_hist_time) // 300)
         
-        # Plot 1: Population
-        ax1.plot(times, st.session_state.lv_hist_prey, 'b-', label='Prey')
-        ax1.plot(times, st.session_state.lv_hist_pred, 'r-', label='Predator')
-        ax1.set_ylabel("Biomass")
-        ax1.legend(loc="upper right", fontsize="small")
-        ax1.grid(True, alpha=0.3)
-        ax1.set_title("Population Dynamics")
+        sliced_time = st.session_state.lv_hist_time[::step_size]
+        sliced_prey = st.session_state.lv_hist_prey[::step_size]
+        sliced_pred = st.session_state.lv_hist_pred[::step_size]
+        sliced_nutr = st.session_state.lv_hist_nutr[::step_size]
+        sliced_ratio = st.session_state.lv_hist_ratio[::step_size]
+
+        # 1. Biomass Chart
+        df_pop = pd.DataFrame({
+            "Time": sliced_time,
+            "Prey": sliced_prey,
+            "Predator": sliced_pred
+        })
+        df_pop_melt = df_pop.melt('Time', var_name='Species', value_name='Biomass')
         
-        # Plot 2: Nutrient
-        ax2.plot(times, st.session_state.lv_hist_nutr, 'g-', label='Nutrient')
-        ax2.set_ylabel("Nutrient Level")
-        ax2.grid(True, alpha=0.3)
+        chart_pop = alt.Chart(df_pop_melt).mark_line().encode(
+            x=alt.X('Time', title='Time (minutes)'),
+            y=alt.Y('Biomass', title='Total Biomass'),
+            color=alt.Color('Species', scale=alt.Scale(domain=['Prey', 'Predator'], range=['blue', 'red'])),
+            tooltip=['Time', 'Species', 'Biomass']
+        ).properties(height=200, title="Population Dynamics")
         
-        # Plot 3: Ratio
-        ax3.plot(times, st.session_state.lv_hist_ratio, 'm-', label='Pred/Prey Ratio')
-        ax3.set_ylabel("Ratio")
-        ax3.set_xlabel("Time (minutes)")  # <--- HERE IS YOUR LABEL
-        ax3.grid(True, alpha=0.3)
+        pop_chart.altair_chart(chart_pop, use_container_width=True)
+
+        # 2. Nutrient Chart
+        df_nut = pd.DataFrame({"Time": sliced_time, "Nutrient": sliced_nutr})
+        chart_nut = alt.Chart(df_nut).mark_line(color='green').encode(
+            x=alt.X('Time', title='Time (minutes)'),
+            y=alt.Y('Nutrient', title='Nutrient Level'),
+            tooltip=['Time', 'Nutrient']
+        ).properties(height=150, title="Nutrient Availability")
         
-        plt.tight_layout()
-        graph_placeholder.pyplot(fig)
+        nutr_chart.altair_chart(chart_nut, use_container_width=True)
+        
+        # 3. Ratio Chart
+        df_ratio = pd.DataFrame({"Time": sliced_time, "Ratio": sliced_ratio})
+        chart_ratio = alt.Chart(df_ratio).mark_line(color='purple').encode(
+            x=alt.X('Time', title='Time (minutes)'),
+            y=alt.Y('Ratio', title='Predator/Prey Ratio'),
+            tooltip=['Time', 'Ratio']
+        ).properties(height=150, title="Predator-Prey Ratio")
+        
+        ratio_chart.altair_chart(chart_ratio, use_container_width=True)
+
+    # -----------------------------
+    # 7. ANIMATION TRIGGER
+    # -----------------------------
+    if run_sim:
+        time.sleep(0.01) # Prevent CPU hogging
+        st.rerun()
