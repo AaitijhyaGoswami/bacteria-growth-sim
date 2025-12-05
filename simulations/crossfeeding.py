@@ -26,7 +26,7 @@ def app():
     **The Metabolyte Consumption Cycle:**
     1.  <span style='color:#FF4444'>**Producer (A)**</span>: Grows freely. **Secretes Food (X)**.
     2.  <span style='color:#44FF44'>**Consumer (B)**</span>: Eats Food (X). **Secretes Poison (Y)**.
-    3.  **Dynamics**: B chases A's food trail, while A runs away from B's poison.
+    3.  **Dynamics**: B follows A's metabolyte trail, while A avoids B's poison.
     """, unsafe_allow_html=True)
 
     # -----------------------
@@ -47,15 +47,14 @@ def app():
         
         st.subheader("Species B (The Consumer)")
         # FIX: Added format="%.2f" and ensuring clear zero handling
-        params['growth_b'] = st.slider("B Efficiency (Delta)", 0.0, 2.0, 0.8, step=0.01, format="%.2f",
-                                     help="Higher Efficiency = Faster Growth & Lower Food Consumption.")
+        params['growth_b'] = st.slider("B Efficiency (Delta)", 0.0, 2.0, 0.8, step=0.01)
         params['death_b'] = st.slider("B Starvation Rate (Gamma)", 0.0, 0.1, 0.02, step=0.001, format="%.3f")
         
         st.subheader("Chemical Warfare")
         params['prod_y'] = st.slider("Production of Poison Y", 0.0, 1.0, 0.5, step=0.01)
         params['toxicity'] = st.slider("Lethality of Y (Beta)", 0.0, 2.0, 0.8, step=0.01)
 
-        if st.button("Reset System"):
+        if st.button("Reset Simulation"):
             st.session_state.cf_initialized = False
             st.rerun()
 
@@ -178,7 +177,7 @@ def app():
     col_main, col_plots = st.columns([1.5, 1])
     
     with col_main:
-        st.write("### Spatial Battleground (300x300)")
+        st.write("### Spatial Species Distribution")
         legend = """
         <div style='display: flex; gap: 15px; font-size: 14px; margin-bottom:10px;'>
             <div><span style='color:#FF4444; font-size:20px'>■</span> <b>Producer A</b></div>
