@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import altair as alt
 from scipy.ndimage import gaussian_filter
+import time
 
 def app():
     st.title("Stochastic Bacterial Colony Growth")
@@ -14,10 +15,9 @@ def app():
     """)
 
     # -----------------------------
-    # 1. PARAMETERS (Sidebar)
+    # 1. PARAMETERS
     # -----------------------------
     st.sidebar.subheader("Physics Parameters")
-    
     FOOD_DIFF = st.sidebar.slider("Food Diffusion", 0.0, 0.02, 0.008, format="%.4f")
     BACT_DIFF = st.sidebar.slider("Bacteria Diffusion", 0.0, 0.05, 0.02, format="%.4f")
     GROWTH_RATE = st.sidebar.slider("Growth Rate", 0.0, 0.1, 0.05, format="%.4f")
@@ -32,6 +32,9 @@ def app():
     NUM_SEEDS = st.sidebar.slider("Number of Colonies", 1, 12, 12)
     SEED_INTENSITY = 0.03
     STEPS_PER_FRAME = st.sidebar.slider("Simulation Speed", 1, 100, 40)
+    
+    # PERFORMANCE OPTIMIZATION
+    GRAPH_UPDATE_FREQ = 10 # Only update graphs every 10 frames to prevent crash
 
     # -----------------------------
     # 2. HELPER FUNCTIONS
@@ -49,7 +52,7 @@ def app():
         return '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
 
     # -----------------------------
-    # 3. INITIALIZATION (Session State)
+    # 3. INITIALIZATION
     # -----------------------------
     if 'bg_bacteria' not in st.session_state:
         st.session_state.bg_initialized = False
@@ -63,7 +66,6 @@ def app():
         food[mask] = 1.0
         seed_ids = np.zeros_like(bacteria, dtype=int)
         
-        # Seeding Logic
         np.random.seed(42)
         for seed_id in range(1, NUM_SEEDS+1):
             attempts = 0
@@ -89,8 +91,8 @@ def app():
         st.session_state.bg_seed_ids = seed_ids
         st.session_state.bg_mask = mask
         st.session_state.bg_time = 0
+        st.session_state.bg_frame_count = 0
         
-        # HISTORY
         st.session_state.bg_hist_time = []      
         st.session_state.bg_pop_history = []    
         st.session_state.bg_nut_history = [] 
@@ -106,7 +108,7 @@ def app():
         st.rerun()
 
     # -----------------------------
-    # 4. LAYOUT SETUP
+    # 4. LAYOUT
     # -----------------------------
     col1, col2, col3 = st.columns(3)
     placeholder_colony = col1.empty()
@@ -118,13 +120,11 @@ def app():
     chart_global_placeholder = col_graph_global.empty()
     chart_local_placeholder = col_graph_local.empty()
 
-    # Simulation Controls
     run_sim = st.toggle("Run Simulation", value=False)
 
     # -----------------------------
-    # 5. PHYSICS CALCULATION
+    # 5. PHYSICS LOOP
     # -----------------------------
-    # We execute this block ONLY if the simulation is running
     if run_sim:
         bacteria = st.session_state.bg_bacteria
         food = st.session_state.bg_food
@@ -173,6 +173,8 @@ def app():
 
         # Update History
         st.session_state.bg_time += STEPS_PER_FRAME
+        st.session_state.bg_frame_count += 1
+        
         st.session_state.bg_hist_time.append(st.session_state.bg_time)
         st.session_state.bg_pop_history.append(np.sum(bacteria))
         st.session_state.bg_nut_history.append(np.sum(food))
@@ -187,22 +189,21 @@ def app():
         st.session_state.bg_seed_ids = seed_ids
 
     # -----------------------------
-    # 6. VISUALIZATION (Happens EVERY frame)
+    # 6. VISUALIZATION
     # -----------------------------
-    # Retrieve latest state
-    bacteria = st.session_state.bg_bacteria
-    seed_ids = st.session_state.bg_seed_ids
-    mask = st.session_state.bg_mask
-    food = st.session_state.bg_food
-
-    # Colors
+    # Retrieve colors
     base_colors = np.array([
         [0,0,0], [1,0,0], [0,1,0], [0,0,1], [1,1,0], [1,0,1], [0,1,1], 
         [0.5,0.5,0], [0.5,0,0.5], [0,0.5,0.5], [1,0.5,0], [0.5,1,0], [1,0,0.5]
     ])
-
-    # 1. Colony Image
+    
+    # 1. Image Update (Every Frame - Fast)
     medium = np.zeros((GRID_SIZE, GRID_SIZE, 3), dtype=float)
+    bacteria = st.session_state.bg_bacteria
+    seed_ids = st.session_state.bg_seed_ids
+    mask = st.session_state.bg_mask
+    food = st.session_state.bg_food
+    
     for i in range(1, NUM_SEEDS+1):
         mask_i = (seed_ids == i)
         for c in range(3):
@@ -219,7 +220,6 @@ def app():
     medium = np.clip(medium, 0, 1)
     medium[~mask] = 0.0
 
-    # 2. Nutrient & Biomass Images
     nutr_img = np.zeros((GRID_SIZE, GRID_SIZE, 3))
     nutr_img[..., 1] = food  
     nutr_img[~mask] = 0.0
@@ -229,20 +229,25 @@ def app():
     bio_img[..., 2] = bacteria * 0.5 
     bio_img[~mask] = 0.0
     
-    # Update Image Placeholders
     placeholder_colony.image(medium, caption=f"Colony Morphology (t={st.session_state.bg_time})", clamp=True, use_column_width=True)
     placeholder_nutrient.image(nutr_img, caption="Nutrient Concentration", clamp=True, use_column_width=True)
     placeholder_biomass.image(bio_img, caption="Biomass Density", clamp=True, use_column_width=True)
 
-    # 3. Update Graphs (Only if we have history)
-    if len(st.session_state.bg_pop_history) > 0:
-        # We perform graph updates every frame, but you can use `if st.session_state.bg_time % X == 0` to optimize
+    # 2. Graph Update (THROTTLED - Only every N frames to stop crashes)
+    if len(st.session_state.bg_pop_history) > 0 and (st.session_state.bg_frame_count % GRAPH_UPDATE_FREQ == 0):
         
+        # OPTIMIZATION: Downsample data if too large (Max ~500 points for Altair)
+        step_size = max(1, len(st.session_state.bg_hist_time) // 500)
+        
+        sliced_time = st.session_state.bg_hist_time[::step_size]
+        sliced_pop = st.session_state.bg_pop_history[::step_size]
+        sliced_nut = st.session_state.bg_nut_history[::step_size]
+
         # Global Graph
         df_global = pd.DataFrame({
-            "Time (mins)": st.session_state.bg_hist_time,
-            "Total Biomass": st.session_state.bg_pop_history,
-            "Total Nutrient": st.session_state.bg_nut_history
+            "Time (mins)": sliced_time,
+            "Total Biomass": sliced_pop,
+            "Total Nutrient": sliced_nut
         })
         df_global_melt = df_global.melt('Time (mins)', var_name='Metric', value_name='Value')
         
@@ -256,9 +261,10 @@ def app():
         chart_global_placeholder.altair_chart(chart_global, use_container_width=True)
 
         # Local Colony Graph
-        data_colony = {"Time (mins)": st.session_state.bg_hist_time}
+        data_colony = {"Time (mins)": sliced_time}
         for i in range(1, NUM_SEEDS+1):
-            data_colony[f"Colony {i}"] = st.session_state.bg_colony_history[i][:len(st.session_state.bg_hist_time)]
+            # Slice colony history same way
+            data_colony[f"Colony {i}"] = st.session_state.bg_colony_history[i][:len(st.session_state.bg_hist_time)][::step_size]
 
         df_colony = pd.DataFrame(data_colony)
         df_colony_melt = df_colony.melt('Time (mins)', var_name='Colony', value_name='Biomass')
@@ -276,10 +282,8 @@ def app():
         chart_local_placeholder.altair_chart(chart_local, use_container_width=True)
 
     # -----------------------------
-    # 7. ANIMATION LOOP TRIGGER
+    # 7. ANIMATION LOOP
     # -----------------------------
-    # CRITICAL: This must be the LAST line. 
-    # If running, we rerun the script. Since we updated the placeholders ABOVE, 
-    # the screen will look updated before the script restarts.
     if run_sim:
+        time.sleep(0.01) # Small breather for the CPU
         st.rerun()
