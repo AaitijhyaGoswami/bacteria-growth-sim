@@ -3,7 +3,9 @@ import numpy as np
 import pandas as pd
 import altair as alt
 
-def app():
+def app():   # ← WRAPPER STARTS HERE
+    st.set_page_config(layout="wide", page_title="Cross-feeding A↔B", initial_sidebar_state="expanded")
+
     # -----------------------
     # Helper: laplacian (periodic)
     # -----------------------
@@ -30,8 +32,8 @@ def app():
     with st.sidebar:
         st.header("Simulation parameters")
 
-        GRID = st.slider("Grid size (N × N)", 100, 400, 200, step=20)
-        PETRI_WIDTH = st.slider("Petri display width (px)", 300, 1000, 600, step=50)
+        GRID = st.slider("Grid size (N × N)", 100, 400, 220, step=20)
+        PETRI_WIDTH = st.slider("Petri display width (px)", 300, 1000, 700, step=50)
 
         STEPS_PER_FRAME = st.slider("Steps per frame", 1, 25, 6)
         dt = st.number_input("Timestep (dt)", value=1.0, step=0.1)
@@ -61,18 +63,15 @@ def app():
         init_empty = 1.0 - (init_A + init_B)
         st.caption(f"Init empty (rest) ≈ {init_empty:.3f}")
 
-        # Use a localized reset mechanism instead of clearing entire session state
         if st.button("Reset and reinitialize"):
-            st.session_state.cf_initialized = False
-            st.rerun()
+            st.session_state.clear()
 
     EMPTY = 0
     A = 1
     B = 2
 
-    # Initialize State with namespaced keys (cf_ prefix)
-    if "cf_initialized" not in st.session_state:
-        st.session_state.cf_initialized = False
+    if "initialized" not in st.session_state:
+        st.session_state.initialized = False
 
     def init_state():
         yy, xx = np.indices((GRID, GRID))
@@ -100,29 +99,28 @@ def app():
             "mean_N": []
         }
 
-        st.session_state.cf_grid = grid
-        st.session_state.cf_mask = mask
-        st.session_state.cf_ma = ma
-        st.session_state.cf_mb = mb
-        st.session_state.cf_N = N
-        st.session_state.cf_t = 0
-        st.session_state.cf_hist = hist
-        st.session_state.cf_run_sim = False
-        st.session_state.cf_initialized = True
+        st.session_state.grid = grid
+        st.session_state.mask = mask
+        st.session_state.ma = ma
+        st.session_state.mb = mb
+        st.session_state.N = N
+        st.session_state.t = 0
+        st.session_state.hist = hist
+        st.session_state.run_sim = False
+        st.session_state.initialized = True
 
-    if not st.session_state.cf_initialized:
+    if not st.session_state.initialized:
         init_state()
 
     # --- Controls ---
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        # Use key to bind directly to session state
-        run = st.checkbox("Run simulation", value=st.session_state.cf_run_sim, key="cf_run_checkbox")
-        st.session_state.cf_run_sim = run
+        run = st.checkbox("Run simulation", value=st.session_state.run_sim)
+        st.session_state.run_sim = run
     with col2:
         step_once = st.button("Step once")
     with col3:
-        st.write(f"Time: {st.session_state.cf_t}")
+        st.write(f"Time: {st.session_state.t}")
 
     # --- Visual placeholders ---
     col_vis, col_stats = st.columns([1.4, 1])
@@ -130,8 +128,8 @@ def app():
         st.write("### Petri dish")
         legend_html = """
         <div style="display:flex; gap:12px; align-items:center; margin-bottom:6px;">
-          <div style="display:inline-block; width:12px; height:12px; background:#FF6666; border:1px solid #555"></div> A (Producer)
-          <div style="display:inline-block; width:12px; height:12px; background:#66CC66; border:1px solid #555; margin-left:10px;"></div> B (Consumer)
+          <div style="display:inline-block; width:12px; height:12px; background:#FF6666; border:1px solid #555"></div> A
+          <div style="display:inline-block; width:12px; height:12px; background:#66CC66; border:1px solid #555; margin-left:10px;"></div> B
         </div>
         """
         st.markdown(legend_html, unsafe_allow_html=True)
@@ -161,14 +159,12 @@ def app():
         mb_local = mb
         ma_local = ma
 
-        # Growth potential calculation
         growth_A_local = (N_local / (N_local + K_N)) * (1.0 / (1.0 + inhib_MB_on_A * mb_local))
         growth_B_local = (ma_local / (ma_local + K_MA))
 
         r_spread = np.random.rand(GRID, GRID)
         r_death = np.random.rand(GRID, GRID)
 
-        # Death events
         death_events_A = (selfg == A) & (r_death < death_A)
         death_events_B = (selfg == B) & (r_death < death_B)
         grid_after_death = grid.copy()
@@ -178,15 +174,12 @@ def app():
         T = grid_after_death
         valid = mask & mask[nx, ny]
 
-        # Reproduction: A
         prob_repro_A = p_spread_A * growth_A_local[nx, ny]
         repro_A = valid & (S == A) & (T == EMPTY) & (r_spread < prob_repro_A)
 
-        # Reproduction: B
         prob_repro_B = p_spread_B * growth_B_local[nx, ny]
         repro_B = valid & (S == B) & (T == EMPTY) & (r_spread < prob_repro_B)
 
-        # Competition: B takes over A (Inhibition mediated)
         takeover_B_on_A = valid & (S == B) & (T == A) & (r_spread < (0.02 + 0.2 * (ma[nx, ny] / (ma[nx, ny] + 0.2))))
 
         new_grid = T.copy()
@@ -194,7 +187,6 @@ def app():
         new_grid[repro_B] = B
         new_grid[takeover_B_on_A] = B
 
-        # Metabolism
         prodA_field = prod_A * (new_grid == A).astype(float)
         prodB_field = prod_B * (new_grid == B).astype(float)
 
@@ -203,13 +195,11 @@ def app():
 
         lap_ma = laplacian(ma)
         lap_mb = laplacian(mb)
-        
-        # Reaction-Diffusion Update
         ma = ma + dt * (D_m * lap_ma + prodA_field - uptake_MA_by_B - decay_m * ma)
         mb = mb + dt * (D_m * lap_mb + prodB_field - decay_m * mb)
+
         N = N - dt * consN_field
 
-        # Clamping
         ma = np.clip(ma, 0, None)
         mb = np.clip(mb, 0, None)
         N = np.clip(N, 0, 1)
@@ -224,45 +214,39 @@ def app():
     # -----------------------
     # Run simulation if active
     # -----------------------
-    if st.session_state.cf_run_sim or step_once:
-        steps = STEPS_PER_FRAME if st.session_state.cf_run_sim else 1
+    if st.session_state.run_sim or step_once:
+        steps = STEPS_PER_FRAME if st.session_state.run_sim else 1
         for _ in range(steps):
-            g, ma, mb, N = sim_step(
-                st.session_state.cf_grid, 
-                st.session_state.cf_ma, 
-                st.session_state.cf_mb, 
-                st.session_state.cf_N, 
-                st.session_state.cf_mask
-            )
-            st.session_state.cf_grid = g
-            st.session_state.cf_ma = ma
-            st.session_state.cf_mb = mb
-            st.session_state.cf_N = N
-            st.session_state.cf_t += 1
+            g, ma, mb, N = sim_step(st.session_state.grid, st.session_state.ma, st.session_state.mb, st.session_state.N, st.session_state.mask)
+            st.session_state.grid = g
+            st.session_state.ma = ma
+            st.session_state.mb = mb
+            st.session_state.N = N
+            st.session_state.t += 1
 
-            hist = st.session_state.cf_hist
-            hist["time"].append(st.session_state.cf_t)
+            hist = st.session_state.hist
+            hist["time"].append(st.session_state.t)
             hist["count_A"].append(int(np.sum(g == A)))
             hist["count_B"].append(int(np.sum(g == B)))
             hist["mean_MA"].append(float(ma.mean()))
             hist["mean_MB"].append(float(mb.mean()))
             hist["mean_N"].append(float(N.mean()))
-            st.session_state.cf_hist = hist
+            st.session_state.hist = hist
 
-        if st.session_state.cf_run_sim:
-            st.rerun()
+        if st.session_state.run_sim:
+            st.experimental_rerun()
 
     # -----------------------
     # Rendering
     # -----------------------
-    grid = st.session_state.cf_grid
-    ma = st.session_state.cf_ma
-    mb = st.session_state.cf_mb
-    mask = st.session_state.cf_mask
+    grid = st.session_state.grid
+    ma = st.session_state.ma
+    mb = st.session_state.mb
+    mask = st.session_state.mask
 
     img = np.zeros((GRID, GRID, 3), float)
-    img[grid == A] = [1.0, 0.35, 0.35] # Reddish for A
-    img[grid == B] = [0.35, 1.0, 0.45] # Greenish for B
+    img[grid == A] = [1.0, 0.35, 0.35]
+    img[grid == B] = [0.35, 1.0, 0.45]
     img[~mask] = 0.05
 
     dish_ph.image(img, width=PETRI_WIDTH)
@@ -273,24 +257,16 @@ def app():
 
     ma_rgb = np.zeros_like(img)
     mb_rgb = np.zeros_like(img)
-    
-    # Simple heatmap visualization
-    ma_rgb[..., 0] = ma_norm # Red channel for MA
-    mb_rgb[..., 1] = mb_norm # Green channel for MB
-    
+    ma_rgb[..., 0] = ma_norm
+    mb_rgb[..., 1] = mb_norm
     ma_rgb[~mask] = 0
     mb_rgb[~mask] = 0
 
-    col_m1, col_m2 = ma_ph.columns(2)
-    with col_m1:
-        st.caption("Metabolite A (MA)")
-        st.image(ma_rgb, use_column_width=True, clamp=True)
-    with col_m2:
-        st.caption("Metabolite B (MB)")
-        st.image(mb_rgb, use_column_width=True, clamp=True)
+    ma_ph.image(ma_rgb, width=PETRI_WIDTH//2)
+    mb_ph.image(mb_rgb, width=PETRI_WIDTH//2)
 
     # Charts
-    hist = st.session_state.cf_hist
+    hist = st.session_state.hist
     if len(hist["time"]) > 0:
         df = pd.DataFrame({
             "Time": hist["time"],
@@ -328,3 +304,9 @@ def app():
     - Increasing `inhib_MB_on_A` produces stronger oscillations.
     - `STEPS per frame` controls simulation speed.
     """)
+
+# -----------------------
+# CALL THE APP
+# -----------------------
+if __name__ == "__main__":
+    app()
