@@ -134,7 +134,7 @@ def app():
     col_main, col_plots = st.columns([1.5, 1])
 
     with col_main:
-        st.write("### Spatial Distribution")
+        st.write("### Spatial Species Distribution")
         st.markdown("""
         <div style='display:flex;gap:15px;font-size:14px;margin-bottom:10px;'>
             <div><span style='color:#FF4444;font-size:20px'>■</span> A</div>
